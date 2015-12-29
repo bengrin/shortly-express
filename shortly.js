@@ -2,7 +2,7 @@ var express = require('express');
 var util = require('./lib/utility');
 var partials = require('express-partials');
 var bodyParser = require('body-parser');
-
+var bcrypt = require('bcrypt-nodejs');
 
 var db = require('./app/config');
 var Users = require('./app/collections/users');
@@ -93,7 +93,8 @@ app.post('/signup', function(req, res) {
   
   new User({ username : username }).fetch().then(function(found) {
     if (found) {
-      res.send(200, found.attributes);
+      console.log('That username already exists!');
+      res.redirect('/signup');
     } else {
       var newUser = new User({
         username : username, 
@@ -107,8 +108,29 @@ app.post('/signup', function(req, res) {
         console.log(err);
       });
     }
+  }, function(err) {
+    res.status(404).send();
   });
-  
+});
+
+app.post('/login', function(req, res){
+  var username = req.body.username;
+  var password = req.body.username;
+
+  new User({ username: username}).fetch().then(function(found) {
+    if (found) {
+      var check = bcrypt.compareSync(password, found.get('password'));
+      if (check === true) {
+        res.redirect('/');
+      } else {
+        res.redirect('/login');
+      }
+    } else {
+      res.redirect('/login');
+    }
+  }, function(err) {
+    res.status(404).send();
+  });
 });
 
 /************************************************************/
