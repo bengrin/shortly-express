@@ -5,6 +5,34 @@ var bodyParser = require('body-parser');
 var bcrypt = require('bcrypt-nodejs');
 var session = require('express-session');
 
+// github passport setup
+var passport = require('passport');
+var GitHubStrategy = require('passport-github2').Strategy;
+
+var GITHUB_CLIENT_ID = "5631142f1d2e2717616d";
+var GITHUB_CLIENT_SECRET = "1ba4e04f86d5799fd3098cef301f57d6394cb28a";
+
+passport.serializeUser(function(user, done) {
+  done(null, user);
+});
+
+passport.deserializeUser(function(obj, done) {
+  done(null, obj);
+});
+
+passport.use(new GitHubStrategy({
+    clientID: GITHUB_CLIENT_ID,
+    clientSecret: GITHUB_CLIENT_SECRET,
+    callbackURL: "http://localhost:4568/auth/github/callback"
+  },
+  function(accessToken, refreshToken, profile, done) {
+    process.nextTick(function () {
+      
+      return done(null, profile);
+    });
+  }
+));
+
 var db = require('./app/config');
 var Users = require('./app/collections/users');
 var User = require('./app/models/user');
@@ -21,12 +49,29 @@ app.use(partials());
 app.use(bodyParser.json());
 // Parse forms (signup/login)
 app.use(bodyParser.urlencoded({ extended: true }));
+
 app.use(express.static(__dirname + '/public'));
 app.use(session({
   secret: 'hackreactor',
   resave: false,
   saveUninitialized: true
 }));
+// Passport
+app.use(passport.initialize());
+app.use(passport.session());
+
+app.get('/auth/github',
+  passport.authenticate('github', { scope: [ 'user:email' ] }),
+  function(req, res){
+    // The request will be redirected to GitHub for authentication, so this
+    // function will not be called.
+  });
+
+app.get('/auth/github/callback', 
+  passport.authenticate('github', { failureRedirect: '/login' }),
+  function(req, res) {
+    res.redirect('/');
+  });
 
 app.get('/', util.checkUser,
 function(req, res) {
@@ -122,19 +167,20 @@ app.post('/signup', function(req, res) {
 
 app.post('/login', function(req, res){
   var username = req.body.username;
-  var password = req.body.username;
+  var password = req.body.password;
 
   new User({ username: username}).fetch().then(function(user) {
     if (user) {
-      var check = bcrypt.compareSync(password, user.get('password'));
-      if (check === true) {
-        req.session.regenerate(function() {
-          req.session.user = user;
-          res.redirect('/');
-        })
-      } else {
-        res.redirect('/login');
-      }
+      bcrypt.compare(password, user.get('password'), function(err, match){
+        if (match) {
+          req.session.regenerate(function() {
+            req.session.user = user;
+            res.redirect('/');
+          });
+        } else {
+          res.redirect('/login');
+        }
+      });
     } else {
       res.redirect('/login');
     }
@@ -143,10 +189,14 @@ app.post('/login', function(req, res){
   });
 });
 
+// app.get('/logout', function(req, res) {
+//   req.session.destroy(function(){
+//     res.redirect('/login');
+//   });
+// });
 app.get('/logout', function(req, res) {
-  req.session.destroy(function(){
-    res.redirect('/login');
-  });
+  req.logout();
+  res.redirect('/');
 });
 /************************************************************/
 // Handle the wildcard route last - if all other routes fail
